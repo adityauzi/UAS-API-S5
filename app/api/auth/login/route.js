@@ -1,21 +1,47 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from "@/lib/prisma"; // Mengambil instance tunggal [cite: 206, 224]
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { NextResponse } from 'next/server';
 
-const prisma = new PrismaClient();
+// Pastikan SECRET_KEY sinkron dengan Environment Variables di Vercel [cite: 451, 479]
 const SECRET_KEY = process.env.JWT_SECRET || 'rahasia-negara';
 
 export async function POST(req) {
-  const { email, password } = await req.json();
-  const user = await prisma.user.findUnique({ where: { email } });
+  try {
+    const { email, password } = await req.json();
 
-  if (user && (await bcrypt.compare(password, user.password))) {
-    // Generate JWT dengan payload id, email, role [cite: 45]
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, SECRET_KEY, { expiresIn: '1d' });
-    
-    return NextResponse.json({ success: true, token });
+    // Mencari user menggunakan instance prisma dari folder lib [cite: 224]
+    const user = await prisma.user.findUnique({ 
+      where: { email } 
+    });
+
+    if (user && (await bcrypt.compare(password, user.password))) {
+      // Generate JWT dengan payload sesuai standar UAS [cite: 633, 634]
+      const token = jwt.sign(
+        { id: user.id, email: user.email, role: user.role }, 
+        SECRET_KEY, 
+        { expiresIn: '1d' }
+      );
+      
+      // Response sukses sesuai contoh pengujian dosen [cite: 621-623]
+      return NextResponse.json({ 
+        success: true, 
+        message: "Login Success", 
+        token 
+      });
+    }
+
+    return NextResponse.json({ 
+      success: false, 
+      error: "Invalid credentials", 
+      code: 401 
+    }, { status: 401 });
+
+  } catch (error) {
+    console.error("Login Error:", error);
+    return NextResponse.json({ 
+      success: false, 
+      error: "Internal Server Error" 
+    }, { status: 500 });
   }
-
-  return NextResponse.json({ success: false, error: "Invalid credentials", code: 401 }, { status: 401 });
 }

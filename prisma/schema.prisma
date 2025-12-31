@@ -1,20 +1,21 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
-}
-
+// Pastikan Model Task dan User Anda tetap ada di bawah sini
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
-  password  String
-  role      String   @default("User") // Admin atau User
-  createdAt DateTime @default(now())
-  tasks     Task[]
+  id    Int    @id @default(autoincrement())
+  name  String
+  email String @unique
+  password String
+  role  String @default("User")
+  tasks Task[]
 }
 
 model Task {
