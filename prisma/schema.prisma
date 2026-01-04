@@ -5,15 +5,12 @@ import { jwtVerify } from "jose";
 
 const SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'rahasia-negara');
 
-// Bagian 4 di kode kamu, ubah sedikit agar lebih aman:
-const updatedTask = await prisma.task.update({
-  where: { id: taskId },
-  data: {
-    title: body.title || undefined, // Hanya update jika ada datanya
-    description: body.description || undefined,
-    status: body.status || undefined,
-    categoryId: body.categoryId || undefined
-  }
+// Validasi skema untuk Task berdasarkan schema.prisma
+const TaskSchema = z.object({
+  title: z.string().min(1, "Judul harus diisi"),
+  description: z.string().optional(),
+  status: z.enum(['pending', 'completed']).default('pending'),
+  categoryId: z.number().optional()
 });
 
 export async function PUT(req, { params }) {
