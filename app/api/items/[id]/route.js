@@ -47,6 +47,9 @@ export async function PUT(req, { params }) {
         status: body.status,
         categoryId: body.categoryId
       }
+
+
+      
     });
 
     return NextResponse.json({ 
