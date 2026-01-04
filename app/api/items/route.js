@@ -1,54 +1,37 @@
-import { prisma } from "@/lib/prisma"; // 
-import { NextResponse } from 'next/server';
+import { prisma } from "@/lib/prisma";
+import { NextResponse } from "next/server";
 
-// FITUR AMBIL DATA (PAGINATION)
-export async function GET(req) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const page = parseInt(searchParams.get('page')) || 1;
-    const limit = parseInt(searchParams.get('limit')) || 10;
-    const skip = (page - 1) * limit;
+// LOGIKA RATE LIMIT INTERNAL (BONUS)
+const rateLimitMap = new Map();
+function internalRateLimiter(request) {
+  const ip = request.headers.get("x-forwarded-for") || "anonymous";
+  const limit = 5; // Batas 5 kali sesuai permintaan Anda
+  const windowMs = 60 * 1000;
+  const now = Date.now();
+  const userData = rateLimitMap.get(ip) || { count: 0, startTime: now };
 
-    const tasks = await prisma.task.findMany({
-      skip,
-      take: limit,
-      orderBy: { createdAt: 'desc' }
-    });
-
-    const totalData = await prisma.task.count();
-
-    return NextResponse.json({ 
-      success: true, 
-      data: tasks,
-      meta: { total: totalData, page, limit, totalPages: Math.ceil(totalData / limit) }
-    });
-  } catch (error) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  if (now - userData.startTime > windowMs) {
+    userData.count = 0;
+    userData.startTime = now;
   }
+  userData.count++;
+  rateLimitMap.set(ip, userData);
+  if (userData.count > limit) throw new Error("Too Many Requests");
 }
-
-import { RateLimiter } from "@/lib/RateLimiter";
 
 export async function GET(request) {
   try {
-    RateLimiter(request); // Panggil di sini
-    // ... sisa kode Anda
+    internalRateLimiter(request); // Panggil fungsi internal
+
+    const items = await prisma.task.findMany({
+        include: { category: true }
+    });
+
+    return NextResponse.json({ success: true, data: items });
   } catch (error) {
     if (error.message === "Too Many Requests") {
-      return Response.json({ error: "Terlalu banyak request, coba lagi nanti" }, { status: 429 });
+      return NextResponse.json({ error: "Terlalu banyak request, coba lagi nanti" }, { status: 429 });
     }
-  }
-}
-
-// FITUR TAMBAH DATA (POST)
-export async function POST(req) {
-  try {
-    const { title, description, userId } = await req.json();
-    const newTask = await prisma.task.create({
-      data: { title, description, userId: parseInt(userId) }
-    });
-    return NextResponse.json({ success: true, data: newTask }, { status: 201 });
-  } catch (error) {
-    return NextResponse.json({ success: false, error: "Gagal tambah tugas" }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
