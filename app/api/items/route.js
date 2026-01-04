@@ -27,6 +27,19 @@ export async function GET(req) {
   }
 }
 
+import { RateLimiter } from "@/lib/RateLimiter";
+
+export async function GET(request) {
+  try {
+    RateLimiter(request); // Panggil di sini
+    // ... sisa kode Anda
+  } catch (error) {
+    if (error.message === "Too Many Requests") {
+      return Response.json({ error: "Terlalu banyak request, coba lagi nanti" }, { status: 429 });
+    }
+  }
+}
+
 // FITUR TAMBAH DATA (POST)
 export async function POST(req) {
   try {

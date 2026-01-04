@@ -1,33 +1,44 @@
-import { prisma } from "@/lib/prisma"; // Mengambil instance tunggal [cite: 206, 224]
+import { prisma } from "@/lib/prisma"; // Mengambil instance tunggal prisma
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import { SignJWT } from 'jose'; 
 import { NextResponse } from 'next/server';
+import { RateLimiter } from "@/lib/RateLimiter"; 
 
-// Pastikan SECRET_KEY sinkron dengan Environment Variables di Vercel [cite: 451, 479]
-const SECRET_KEY = process.env.JWT_SECRET || 'rahasia-negara';
+// Pastikan SECRET_KEY sinkron dengan Environment Variables di Vercel
+const SECRET_KEY = new TextEncoder().encode(process.env.JWT_SECRET || 'rahasia-negara');
 
 export async function POST(req) {
   try {
+    // --- BONUS 1: Rate Limiting (Mencegah Brute Force) ---
+    RateLimiter(req); 
+
     const { email, password } = await req.json();
 
-    // Mencari user menggunakan instance prisma dari folder lib [cite: 224]
+    // Mencari user di database NeonDB
     const user = await prisma.user.findUnique({ 
       where: { email } 
     });
 
     if (user && (await bcrypt.compare(password, user.password))) {
-      // Generate JWT dengan payload sesuai standar UAS [cite: 633, 634]
-      const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role }, 
-        SECRET_KEY, 
-        { expiresIn: '1d' }
-      );
       
-      // Response sukses sesuai contoh pengujian dosen [cite: 621-623]
+      // --- BONUS 2: Access Token (Masa aktif 15 menit) ---
+      const accessToken = await new SignJWT({ id: user.id, email: user.email, role: user.role })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setExpirationTime('15m')
+        .sign(SECRET_KEY);
+
+      // --- BONUS 3: Refresh Token (Masa aktif 7 hari) ---
+      const refreshToken = await new SignJWT({ id: user.id })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setExpirationTime('7d')
+        .sign(SECRET_KEY);
+      
+      // Response sukses sesuai standar pengujian
       return NextResponse.json({ 
         success: true, 
         message: "Login Success", 
-        token 
+        token: accessToken,
+        refreshToken: refreshToken 
       });
     }
 
@@ -38,6 +49,14 @@ export async function POST(req) {
     }, { status: 401 });
 
   } catch (error) {
+    // Menangkap error jika user melakukan spam request
+    if (error.message === "Too Many Requests") {
+      return NextResponse.json({ 
+        success: false, 
+        error: "Terlalu banyak request, coba lagi dalam 1 menit" 
+      }, { status: 429 });
+    }
+    
     console.error("Login Error:", error);
     return NextResponse.json({ 
       success: false, 
