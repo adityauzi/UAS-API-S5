@@ -1,36 +1,68 @@
-generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "rhel-openssl-3.0.x"]
-}
+import { prisma } from "@/lib/prisma"; // Menggunakan singleton prisma
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { jwtVerify } from "jose";
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+const SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'rahasia-negara');
 
-model User {
-  id       Int    @id @default(autoincrement())
-  name     String
-  email    String @unique
-  password String
-  role     String @default("User")
-  tasks    Task[]
-}
+// Bagian 4 di kode kamu, ubah sedikit agar lebih aman:
+const updatedTask = await prisma.task.update({
+  where: { id: taskId },
+  data: {
+    title: body.title || undefined, // Hanya update jika ada datanya
+    description: body.description || undefined,
+    status: body.status || undefined,
+    categoryId: body.categoryId || undefined
+  }
+});
 
-model Category {
-  id    Int    @id @default(autoincrement())
-  name  String @unique
-  tasks Task[]
-}
+export async function PUT(req, { params }) {
+  try {
+    // 1. Ambil ID dari URL
+    const { id } = await params;
+    const taskId = parseInt(id);
 
-model Task {
-  id          Int       @id @default(autoincrement())
-  title       String
-  description String?
-  status      String    @default("pending")
-  userId      Int
-  user        User      @relation(fields: [userId], references: [id])
-  categoryId  Int?
-  category    Category? @relation(fields: [categoryId], references: [id])
-  createdAt   DateTime  @default(now())
+    // 2. Cek Token (Proteksi Token Wajib)
+    const token = req.headers.get('authorization')?.split(' ')[1];
+    if (!token) {
+      return NextResponse.json({ success: false, error: "Unauthorized: Token diperlukan" }, { status: 401 });
+    }
+    await jwtVerify(token, SECRET);
+
+    // 3. Ambil dan Validasi Body
+    const body = await req.json();
+    const validation = TaskSchema.safeParse(body);
+
+    if (!validation.success) {
+      return NextResponse.json({ 
+        success: false, 
+        error: "Validasi gagal", 
+        details: validation.error.errors 
+      }, { status: 400 });
+    }
+
+    // 4. Update data di database NeonDB
+    const updatedTask = await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        title: body.title,
+        description: body.description,
+        status: body.status,
+        categoryId: body.categoryId
+      }
+    });
+
+    return NextResponse.json({ 
+      success: true, 
+      message: "Tugas berhasil diperbarui", 
+      data: updatedTask 
+    }, { status: 200 });
+
+  } catch (error) {
+    console.error("Error PUT Item:", error);
+    return NextResponse.json({ 
+      success: false, 
+      error: "Gagal memperbarui tugas atau ID tidak ditemukan" 
+    }, { status: 500 });
+  }
 }
