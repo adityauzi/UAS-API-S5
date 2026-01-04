@@ -1,11 +1,10 @@
-import { prisma } from "@/lib/prisma"; // Menggunakan singleton prisma
+import { prisma } from "@/lib/prisma"; // Singleton Prisma
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { jwtVerify } from "jose";
 
 const SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'rahasia-negara');
 
-// Validasi skema untuk Task berdasarkan schema.prisma
 const TaskSchema = z.object({
   title: z.string().min(1, "Judul harus diisi"),
   description: z.string().optional(),
@@ -15,18 +14,32 @@ const TaskSchema = z.object({
 
 export async function PUT(req, { params }) {
   try {
-    // 1. Ambil ID dari URL
     const { id } = await params;
     const taskId = parseInt(id);
 
-    // 2. Cek Token (Proteksi Token Wajib)
     const token = req.headers.get('authorization')?.split(' ')[1];
     if (!token) {
       return NextResponse.json({ success: false, error: "Unauthorized: Token diperlukan" }, { status: 401 });
     }
-    await jwtVerify(token, SECRET);
 
-    // 3. Ambil dan Validasi Body
+    // 1. Verifikasi Tanda Tangan JWT
+    const { payload } = await jwtVerify(token, SECRET);
+
+    // --- MULAI TAMBAHAN LOGIKA SINGLE TOKEN ---
+    // Cari user di database berdasarkan ID dari token
+    const userDb = await prisma.user.findUnique({
+      where: { id: payload.id }
+    });
+
+    // Bandingkan: Jika token yang dikirim TIDAK SAMA dengan token di DB, berarti ada login baru
+    if (!userDb || userDb.token !== token) {
+      return NextResponse.json({ 
+        success: false, 
+        error: "Sesi telah berakhir. Akun Anda telah melakukan login di tempat lain." 
+      }, { status: 401 });
+    }
+    // --- SELESAI TAMBAHAN LOGIKA SINGLE TOKEN ---
+
     const body = await req.json();
     const validation = TaskSchema.safeParse(body);
 
@@ -38,7 +51,6 @@ export async function PUT(req, { params }) {
       }, { status: 400 });
     }
 
-    // 4. Update data di database NeonDB
     const updatedTask = await prisma.task.update({
       where: { id: taskId },
       data: {
@@ -47,9 +59,6 @@ export async function PUT(req, { params }) {
         status: body.status,
         categoryId: body.categoryId
       }
-
-
-      
     });
 
     return NextResponse.json({ 
@@ -62,7 +71,7 @@ export async function PUT(req, { params }) {
     console.error("Error PUT Item:", error);
     return NextResponse.json({ 
       success: false, 
-      error: "Gagal memperbarui tugas atau ID tidak ditemukan" 
+      error: "Gagal memperbarui tugas (Token tidak valid atau ID salah)" 
     }, { status: 500 });
   }
 }

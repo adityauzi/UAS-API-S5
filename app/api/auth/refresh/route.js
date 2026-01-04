@@ -17,7 +17,7 @@ export async function POST(req) {
     // Buat Access Token baru
     const newAccessToken = await new SignJWT({ id: payload.id, role: payload.role })
       .setProtectedHeader({ alg: 'HS256' })
-      .setExpirationTime('15m')
+      .setExpirationTime('3m')
       .sign(SECRET);
 
     return NextResponse.json({ success: true, token: newAccessToken });

@@ -34,7 +34,7 @@ export async function POST(req) {
       // 1. Generate Token Baru
       const newToken = await new SignJWT({ id: user.id, email: user.email, role: user.role })
         .setProtectedHeader({ alg: 'HS256' })
-        .setExpirationTime('1d')
+        .setExpirationTime('3m')
         .sign(SECRET_KEY);
 
       // 2. SIMPAN TOKEN BARU KE DATABASE (Ini akan membatalkan token lama)
