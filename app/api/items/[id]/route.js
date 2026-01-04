@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"; // Singleton Prisma
+import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { jwtVerify } from "jose";
@@ -12,47 +12,23 @@ const TaskSchema = z.object({
   categoryId: z.number().optional()
 });
 
+// --- FUNGSI PUT (Update data) ---
 export async function PUT(req, { params }) {
   try {
     const { id } = await params;
     const taskId = parseInt(id);
-
     const token = req.headers.get('authorization')?.split(' ')[1];
-    if (!token) {
-      return NextResponse.json({ success: false, error: "Unauthorized: Token diperlukan" }, { status: 401 });
-    }
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    // 1. Verifikasi Tanda Tangan JWT
     const { payload } = await jwtVerify(token, SECRET);
 
-    // --- MULAI TAMBAHAN LOGIKA SINGLE TOKEN ---
-    // Cari user di database berdasarkan ID dari token
-    const userDb = await prisma.user.findUnique({
-      where: { id: payload.id }
-    });
-
-    // Bandingkan: Jika token yang dikirim TIDAK SAMA dengan token di DB, berarti ada login baru
+    // Cek Single Active Token
+    const userDb = await prisma.user.findUnique({ where: { id: payload.id } });
     if (!userDb || userDb.token !== token) {
-      return NextResponse.json({ 
-        success: false, 
-        error: "Sesi telah berakhir. Akun Anda telah melakukan login di tempat lain." 
-      }, { status: 401 });
+      return NextResponse.json({ error: "Sesi telah berakhir." }, { status: 401 });
     }
-    // --- SELESAI TAMBAHAN LOGIKA SINGLE TOKEN ---
-
-    
 
     const body = await req.json();
-    const validation = TaskSchema.safeParse(body);
-
-    if (!validation.success) {
-      return NextResponse.json({ 
-        success: false, 
-        error: "Validasi gagal", 
-        details: validation.error.errors 
-      }, { status: 400 });
-    }
-
     const updatedTask = await prisma.task.update({
       where: { id: taskId },
       data: {
@@ -63,17 +39,53 @@ export async function PUT(req, { params }) {
       }
     });
 
+    return NextResponse.json({ success: true, message: "Tugas diperbarui", data: updatedTask });
+  } catch (error) {
+    return NextResponse.json({ error: "Invalid Token atau ID salah" }, { status: 500 });
+  }
+}
+
+// --- FUNGSI DELETE (Admin Only) ---
+export async function DELETE(req, { params }) {
+  try {
+    const { id } = await params;
+    const taskId = parseInt(id);
+
+    const token = req.headers.get('authorization')?.split(' ')[1];
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    // 1. Verifikasi Token
+    const { payload } = await jwtVerify(token, SECRET);
+
+    // 2. PROTEKSI ROLE: Hanya Admin yang boleh
+    // Perhatikan: 'Admin' harus sama persis huruf besar/kecilnya dengan di database
+    if (payload.role !== 'Admin') {
+      return NextResponse.json({ 
+        success: false, 
+        error: "Forbidden: Hanya Admin yang dapat menghapus data ini!" 
+      }, { status: 403 });
+    }
+
+    // 3. Proteksi Single Token
+    const userDb = await prisma.user.findUnique({ where: { id: payload.id } });
+    if (!userDb || userDb.token !== token) {
+      return NextResponse.json({ error: "Sesi berakhir. Login di tempat lain." }, { status: 401 });
+    }
+
+    // 4. Eksekusi Delete
+    await prisma.task.delete({
+      where: { id: taskId }
+    });
+
     return NextResponse.json({ 
       success: true, 
-      message: "Tugas berhasil diperbarui", 
-      data: updatedTask 
-    }, { status: 200 });
+      message: `Berhasil menghapus tugas dengan ID ${taskId}` 
+    });
 
   } catch (error) {
-    console.error("Error PUT Item:", error);
     return NextResponse.json({ 
       success: false, 
-      error: "Gagal memperbarui tugas (Token tidak valid atau ID salah)" 
+      error: "Gagal menghapus. Pastikan ID tugas benar." 
     }, { status: 500 });
   }
 }
