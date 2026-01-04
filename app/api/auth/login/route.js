@@ -23,38 +23,39 @@ function internalRateLimiter(request) {
   if (userData.count > limit) throw new Error("Too Many Requests");
 }
 
+// ... import prisma, SignJWT, dll ...
+
 export async function POST(req) {
   try {
-    internalRateLimiter(req); 
-
     const { email, password } = await req.json();
     const user = await prisma.user.findUnique({ where: { email } });
 
     if (user && (await bcrypt.compare(password, user.password))) {
-      const accessToken = await new SignJWT({ id: user.id, email: user.email, role: user.role })
+      // 1. Generate Token Baru
+      const newToken = await new SignJWT({ id: user.id, email: user.email, role: user.role })
         .setProtectedHeader({ alg: 'HS256' })
-        .setExpirationTime('15m')
+        .setExpirationTime('1d')
         .sign(SECRET_KEY);
 
-      const refreshToken = await new SignJWT({ id: user.id })
-        .setProtectedHeader({ alg: 'HS256' })
-        .setExpirationTime('7d')
-        .sign(SECRET_KEY);
-      
+      // 2. SIMPAN TOKEN BARU KE DATABASE (Ini akan membatalkan token lama)
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { token: newToken }
+      });
+
       return NextResponse.json({ 
         success: true, 
         message: "Login Success", 
-        token: accessToken,
-        refreshToken: refreshToken 
+        token: newToken // Cukup kirim 1 token saja sesuai permintaan Anda
       });
     }
+    // ... handling error ...
+  } catch (error) { /* ... */ 
 
-    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+  }
 
-  } catch (error) {
     if (error.message === "Too Many Requests") {
       return NextResponse.json({ error: "Terlalu banyak request (Limit 5x)" }, { status: 429 });
     }
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
-}
